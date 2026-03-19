@@ -48,7 +48,11 @@ public class OpenAiHttpClient implements OpenAiClientWrapper {
     @Override
     public String chat(String systemPrompt, String userMessage) {
         if (!isAvailable()) {
-            return "[OPENAI_API_KEY가 설정되지 않았습니다. 환경변수를 설정하거나 문서 기반 답변만 사용하세요.]";
+            boolean hasContext = systemPrompt != null && systemPrompt.contains("참고 문서") && systemPrompt.length() > 100;
+            if (hasContext) {
+                return "문서에서 관련 내용을 찾았습니다. OPENAI_API_KEY를 설정하시면 이 내용을 바탕으로 더 자세한 답변을 받을 수 있습니다.";
+            }
+            return "질문을 확인했습니다. OPENAI_API_KEY를 설정하시면 문서 기반 답변을 받을 수 있습니다.";
         }
         JsonObject body = new JsonObject();
         body.addProperty("model", CHAT_MODEL);

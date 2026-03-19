@@ -8,8 +8,8 @@
     <artifactId>kai-rag-llm</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>jar</packaging>
-    <name>KAI - RAG + LLM Java Application</name>
-    <description>Java 기반 RAG(Retrieval-Augmented Generation)와 LLM 연동 AI 프로그램</description>
+    <name>KAI - SAP 전표·문서 실제 생성 (Node 권장)</name>
+    <description>SAP 분개 전기(DI/SAP 연동), RAG 참고. 안내가 아닌 실제 문서 생성 목적</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>

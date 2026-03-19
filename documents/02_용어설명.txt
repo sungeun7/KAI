@@ -1,0 +1,13 @@
+RAG와 LLM 용어 설명 (SAP 문서 기반 KAI)
+
+RAG (Retrieval-Augmented Generation)
+- 검색 증강 생성. 문서를 검색한 뒤 그 내용을 참고하여 답변을 만드는 방식입니다.
+- KAI는 SAP 관련 문서(매뉴얼, 절차, 분개/전표 등)를 documents 폴더에서 검색해 질문과 관련된 부분을 찾고, 그 내용을 LLM에 전달합니다.
+
+LLM (Large Language Model)
+- 대규모 언어 모델. OpenAI의 GPT 등이 이에 해당합니다.
+- KAI는 OpenAI API를 통해 LLM을 사용해 참고 문서 기반 답변을 생성합니다.
+
+임베딩 (Embedding)
+- 텍스트를 숫자 벡터로 바꾸는 것. 유사한 문장은 비슷한 벡터가 됩니다.
+- KAI는 문서 조각을 임베딩해 저장하고, 질문과 유사한 조각을 검색합니다.

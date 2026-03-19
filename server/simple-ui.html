@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KAI</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 0 auto; padding: 16px;
+      background: #1a1b26; color: #c0caf5; }
+    h1 { color: #7aa2f7; font-size: 1.25rem; margin-top: 0; }
+    a { color: #89ddff; }
+    label { display: block; font-size: 13px; margin-top: 12px; color: #a9b1d6; }
+    textarea, input[type="text"], input[type="password"] {
+      width: 100%; box-sizing: border-box; padding: 10px; margin-top: 4px;
+      background: #24283b; border: 1px solid #364a7c; color: #c0caf5; border-radius: 8px; }
+    textarea { min-height: 72px; resize: vertical; }
+    button { margin-top: 16px; padding: 12px 24px; background: #7aa2f7; color: #1a1b26;
+      border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    #out { white-space: pre-wrap; word-break: break-word; background: #24283b; padding: 14px;
+      border-radius: 8px; min-height: 100px; margin-top: 20px; border: 1px solid #364a7c; }
+    .hint { font-size: 12px; color: #6c7086; line-height: 1.5; }
+    .box { background: #24283b; padding: 12px; border-radius: 8px; margin-top: 8px; border: 1px solid #364a7c; }
+  </style>
+</head>
+<body>
+  <h1>KAI — SAP 문서 생성</h1>
+
+  <label for="q">입력 (예 : 재고이전 데이터)</label>
+  <textarea id="q" placeholder="예: 품목번호 11411-053 배치번호 11411-053@260422 10개를 출고창고 aa120 에서 입고창고 aa100 으로 재고이전해줘"></textarea>
+  <p class="hint">분개·전표 → DI/SAP 전기. <strong>재고이전</strong> → 기본 <code>http://192.168.0.37/CSM001</code> POST.</p>
+
+  <div class="box">
+    <label for="sapuser">SAP 사용자 (비우면 manager)</label>
+    <input type="text" id="sapuser" value="manager" autocomplete="off" />
+    <label for="sappass">SAP 비밀번호</label>
+    <input type="password" id="sappass" value="emdc" autocomplete="off" />
+  </div>
+
+
+  <button type="button" id="btn">전송</button>
+
+  <div id="out"></div>
+
+  <script>
+    document.getElementById('btn').onclick = async function () {
+      var q = document.getElementById('q').value.trim();
+      if (!q) { alert('질문을 입력하세요'); return; }
+      var body = { question: q };
+      var out = document.getElementById('out');
+      var btn = document.getElementById('btn');
+      out.textContent = '응답 대기 중…';
+      btn.disabled = true;
+      try {
+        var r = await fetch('/api/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        var j = await r.json();
+        out.textContent = j.answer || j.error || JSON.stringify(j);
+      } catch (e) {
+        out.textContent = '오류: ' + e;
+      }
+      btn.disabled = false;
+    };
+  </script>
+</body>
+</html>

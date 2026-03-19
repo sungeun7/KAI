@@ -60,7 +60,8 @@ public class DocumentLoader {
 
     private static boolean isTextFile(Path p) {
         String name = p.getFileName().toString().toLowerCase();
-        return name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".json");
+        return name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".json")
+            || name.endsWith(".csv");
     }
 
     public static class LoadedDocument {

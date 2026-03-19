@@ -1,0 +1,16 @@
+자주 묻는 문제 해결
+
+Q: API 오류 401이 나요
+A: API 키가 잘못되었거나 만료되었을 수 있습니다. OpenAI에서 새 키를 발급해 OPENAI_API_KEY에 설정하세요.
+
+Q: API 오류 429가 나요
+A: 요청 한도 초과입니다. 잠시 기다린 뒤 다시 시도하거나, OpenAI 사용량/한도를 확인하세요.
+
+Q: 메모리 부족(OutOfMemoryError)이 나요
+A: 반드시 run.bat으로 실행하세요. IDE에서 실행 시 문서 인덱싱이 생략되며, run.bat은 충분한 힙을 할당합니다.
+
+Q: 인덱싱된 청크 수가 0이에요
+A: run.bat으로 실행했는지 확인하세요. documents 폴더에 .txt, .md, .csv, .json 파일이 있는지도 확인하세요.
+
+Q: "The build file has been changed and may need reload to make it effective" 메시지가 나와요
+A: pom.xml 변경 후 IDE 안내입니다. 한 번만 다음 중 하나를 하면 됩니다. Ctrl+Shift+P → "Developer: Reload Window" 또는 "Java: Clean Java Language Server Workspace" 실행 후 재시작. .vscode/settings.json에 java.configuration.updateBuildConfiguration: "automatic" 이 있으면 이후에는 자동으로 반영됩니다.
