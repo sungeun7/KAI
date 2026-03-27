@@ -34,6 +34,11 @@ import {
   tryParseCBP002RequestFromInstruction,
   normalizeCBP002Request,
 } from './inboundProcessing.js'
+import {
+  buildInboundPendingOdataUrl,
+  isInboundDocumentListIntent,
+} from './sapInboundPending.js'
+import { fetchOpdnSql, isSboSqlConfigured } from './sboOpdnSql.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..')
@@ -76,6 +81,9 @@ const EMBEDDING_MODEL = 'text-embedding-3-small'
 const apiKey = (process.env.OPENAI_API_KEY || '').trim()
 const apiConfigured = Boolean(apiKey)
 const sapOdataConfigured = Boolean((process.env.SAP_ODATA_URL || '').trim())
+const sapInboundPendingOdataConfigured = Boolean(
+  (process.env.SAP_ODATA_INBOUND_PENDING_URL || '').trim()
+)
 const sapJournalPostUrl = (process.env.SAP_JOURNAL_POST_URL || '').trim()
 const sapJournalMock = process.env.SAP_JOURNAL_MOCK === 'true'
 const journalViaDiOrSap = diConfigured() || Boolean(sapJournalPostUrl)
@@ -465,6 +473,8 @@ app.get('/api/status', (_req, res) => {
     apiConfigured,
     chunkCount: chunks.length,
     sapOdataConfigured,
+    sapInboundPendingOdataConfigured,
+    sboSqlConfigured: isSboSqlConfigured(),
     sapJournalPostConfigured: Boolean(sapJournalPostUrl),
     diServerConfigured: diConfigured(),
     sapJournalMock,
@@ -569,6 +579,8 @@ async function runStockTransferPipeline(instruction) {
 function isInboundProcessingIntent(q) {
   if (!q || q.length < 3) return false
   if (/취소|취소처리|취소\s*요청/i.test(q)) return false
+  /** 미처리 입고 문서 조회는 CBP002가 아님 */
+  if (isInboundDocumentListIntent(q)) return false
   /** '입고' 라는 단어가 나오면 무조건 입고처리 폼 사용 */
   return /입고/i.test(q)
 }
@@ -726,6 +738,112 @@ function isJournalIntent(q) {
   return has && act
 }
 
+async function runInboundPendingDocumentsQuery(question) {
+  const { url, fromFallback, weekAgo, today } = buildInboundPendingOdataUrl()
+  const parts = []
+
+  let sqlMeta = null
+  if (isSboSqlConfigured()) {
+    sqlMeta = await fetchOpdnSql(question)
+    if (sqlMeta.ok) {
+      parts.push(
+        `[SAP B1 SQL ${sqlMeta.table}]\n` +
+          `조건: DocDate >= ${sqlMeta.fromDateISO} (최대 ${sqlMeta.rowCount}행)\n` +
+          sqlMeta.text
+      )
+    } else {
+      parts.push(`[SAP B1 SQL 오류]\n${sqlMeta.error}`)
+    }
+  }
+
+  const useOdata =
+    Boolean(url) &&
+    (!isSboSqlConfigured() ||
+      !sqlMeta?.ok ||
+      process.env.KAI_SBO_SQL_AND_ODATA === 'true')
+
+  if (useOdata) {
+    const sap = await fetchSapOdataUrl(
+      url,
+      process.env.SAP_USER,
+      process.env.SAP_PASSWORD,
+      null
+    )
+    const prefix = fromFallback
+      ? `(참고: SAP_ODATA_INBOUND_PENDING_URL 이 없어 SAP_ODATA_URL 을 사용했습니다. 날짜 치환: ${weekAgo} ~ ${today})\n`
+      : `(날짜 치환: ${weekAgo} ~ ${today})\n`
+    if (sap.ok) {
+      parts.push('[SAP OData: 미처리·입고 문서 조회]\n' + prefix + sap.text)
+    } else {
+      parts.push(
+        '[SAP OData 조회 실패: ' +
+          sap.error +
+          ']\n' +
+          prefix +
+          '(요청 URL 앞부분: ' +
+          url.slice(0, 400) +
+          (url.length > 400 ? '…' : '') +
+          ')\n'
+      )
+    }
+  }
+
+  if (parts.length === 0) {
+    parts.push(
+      '[SAP 미연계]\n' +
+        '입고(OPDN)을 DB에서 보려면 `server/.env`에 `KAI_SBO_SQL_CONNECTION_STRING` 또는 `KAI_SBO_SQL_SERVER`+`KAI_SBO_SQL_USER`+`KAI_SBO_SQL_PASSWORD`+`KAI_SBO_SQL_DATABASE`(기본 SBO_MACRO)를 설정하세요. ' +
+        'OData만 쓸 경우 `SAP_ODATA_INBOUND_PENDING_URL` 또는 `SAP_ODATA_URL`을 설정하세요. ' +
+        '질문에 `2026-03-01`처럼 날짜가 있으면 `DocDate >= 해당일` 기준으로 조회합니다(없으면 최근 7일).'
+    )
+  }
+
+  // SQL 결과가 있으면 LLM 해석 단계를 거치지 않고 그대로 반환 (자료 없음 오판 방지)
+  if (sqlMeta?.ok) {
+    const answer =
+      '### 미처리 입고 문서 조회 결과 (SQL)\n\n' +
+      `- 기준 테이블: \`${sqlMeta.table}\`\n` +
+      `- 기준 조건: \`DocDate >= ${sqlMeta.fromDateISO}\`\n` +
+      `- 조회 건수: **${sqlMeta.rowCount}건**\n\n` +
+      '```json\n' +
+      (sqlMeta.text || '[]') +
+      '\n```'
+    return {
+      answer,
+      usedUrl: url,
+      fromFallback,
+      weekAgo,
+      today,
+      sql: {
+        ok: sqlMeta.ok,
+        table: sqlMeta.table,
+        fromDateISO: sqlMeta.fromDateISO,
+        rowCount: sqlMeta.rowCount,
+        error: sqlMeta.error || null,
+      },
+    }
+  }
+
+  const answer =
+    '### 미처리 입고 문서 조회 결과\n\n' +
+    parts.map((p) => `\`\`\`\n${p}\n\`\`\``).join('\n\n')
+  return {
+    answer,
+    usedUrl: url,
+    fromFallback,
+    weekAgo,
+    today,
+    sql: sqlMeta
+      ? {
+          ok: sqlMeta.ok,
+          table: sqlMeta.table,
+          fromDateISO: sqlMeta.fromDateISO,
+          rowCount: sqlMeta.rowCount,
+          error: sqlMeta.error || null,
+        }
+      : null,
+  }
+}
+
 async function runJournalPipeline(instruction) {
   const proposal = await generateJournalProposal(instruction, apiKey)
   if (sapJournalMock) {
@@ -769,6 +887,26 @@ app.post('/api/query', async (req, res) => {
     const question = (req.body?.question ?? '').trim()
     if (!question) {
       return res.status(400).json({ error: 'question required' })
+    }
+
+    if (isInboundDocumentListIntent(question)) {
+      try {
+        const ibq = await runInboundPendingDocumentsQuery(question)
+        return res.json({
+          answer: ibq.answer,
+          sapInboundPending: {
+            usedUrl: ibq.usedUrl
+              ? String(ibq.usedUrl).replace(/\/\/[^@/]+@/, '//***@')
+              : null,
+            fromFallback: ibq.fromFallback,
+            weekAgo: ibq.weekAgo,
+            today: ibq.today,
+            sql: ibq.sql,
+          },
+        })
+      } catch (pe) {
+        console.warn('[미처리 입고 문서 조회 실패, 일반 질의로]', pe)
+      }
     }
 
     if (apiConfigured && isStockTransferIntent(question)) {
