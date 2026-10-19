@@ -169,17 +169,15 @@ namespace MACRO_WMS.Controllers
                             jCVA003H.ErpPickingNo = ""; // null 또는 빈 문자열인 경우 빈 문자열로 설정
                         }
 
-                        if (jCVA003.BizSeq == 1)
+                        /** 판매오더 연동 해제 — 기존 코드는 UPDATE 문자열만 만들고 실행하지 않아 납품 취소 전 ORDR이 갱신되지 않았음 */
+                        if (string.Equals(jCVA003H.ErpReqTypCd, "ORDR", StringComparison.OrdinalIgnoreCase)
+                            && !string.IsNullOrEmpty(jCVA003H.ErpReqNo))
                         {
-                            //query = "UPDATE " + sDB.SAPDB(jCVA003.BizSeq.ToString()) + "..PKL1 SET U_WMSNY = 'C' WHERE DocEntry = '" + jCVA003.ReqList[i].ErpReqNo + "'";
-                            //query = "UPDATE " + sDB.SAPDB(jCVA003.BizSeq.ToString()) + "..OWTQ SET U_WMSNY = 'C' WHERE DocEntry = '" + jCVA003.ReqList[i].ErpReqNo + "'";
-                            query = "UPDATE " + sDB.SAPDB(jCVA003.BizSeq.ToString()) + "..ORDR SET U_WMSNY = 'N' WHERE DocEntry = '" + jCVA003.ReqList[i].ErpReqNo + "'";
-                        }
-                        else if (jCVA003.BizSeq == 2)
-                        {
-                            //query = "UPDATE " + sDB.SAPDB(jCVA003.BizSeq.ToString()) + "..PKL1 SET U_WMSNY = 'C' WHERE DocEntry = '" + jCVA003.ReqList[i].ErpReqNo + "'";
-                            //query = "UPDATE " + sDB.SAPDB(jCVA003.BizSeq.ToString()) + "..OWTQ SET U_WMSNY = 'C' WHERE DocEntry = '" + jCVA003.ReqList[i].ErpReqNo + "'";
-                            query = "UPDATE " + sDB.SAPDB(jCVA003.BizSeq.ToString()) + "..ORDR SET U_WMSNY = 'N' WHERE DocEntry = '" + jCVA003.ReqList[i].ErpReqNo + "'";
+                            string updOrdr = "UPDATE " + sDB.SAPDB(jCVA003.BizSeq.ToString()) + "..ORDR SET U_WMSNY = 'N' WHERE DocEntry = '" + jCVA003H.ErpReqNo + "'";
+                            using (var cmdUpd = new SqlCommand(updOrdr, connection))
+                            {
+                                cmdUpd.ExecuteNonQuery();
+                            }
                         }
 
                         if (jCVA003H.ErpReqTypCd == "ORDR") //입고유형이 없으면 입고PO
@@ -195,19 +193,30 @@ namespace MACRO_WMS.Controllers
 
                             //구매오더 기준 입고문서 조회
                             query = " SELECT DocEntry FROM " + sDB.SAPDB(jCVA003.BizSeq.ToString()) + "..ODLN ";
-                            query = query + " Where U_WMSDOCNUM = '" + jCVA003.ReqList[i].WmsReqNo + "'";
-                            query = query + "   AND U_WMSNUM = '" + jCVA003.ReqList[i].ProcBundleNo + "'";
+                            query = query + " Where U_WMSDOCNUM = '" + jCVA003H.WmsReqNo + "'";
+                            query = query + "   AND U_WMSNUM = '" + jCVA003H.ProcBundleNo + "'";
                             _logger.LogWarning(query);
 
                             //쿼리 실행
                             command = new SqlCommand(query, connection);
                             reader = command.ExecuteReader();
-                            reader.Read();
+                            if (!reader.Read())
+                            {
+                                reader.Close();
+                                ResultList.Add(new ResultListItem
+                                {
+                                    IfKey = jCVA003H.IfKey,
+                                    ProcBundleNo = jCVA003H.ProcBundleNo,
+                                    Result = "E",
+                                    Message = "ODLN 없음: U_WMSDOCNUM/U_WMSNUM이 납품 헤더와 일치하는지 확인하세요."
+                                });
+                                continue;
+                            }
 
                             //헤더
                             oODLN.GetByKey(int.Parse(reader.GetInt32(0).ToString()));
                             cancelDoc = oODLN.CreateCancellationDocument();
-                            cancelDoc.DocDate = DateTime.ParseExact(jCVA003.ReqList[i].ProcYmd, "yyyyMMdd", null);
+                            cancelDoc.DocDate = DateTime.ParseExact(jCVA003H.ProcYmd, "yyyyMMdd", null);
 
                             //문서 취소
                             DIresult = cancelDoc.Add();
@@ -229,10 +238,10 @@ namespace MACRO_WMS.Controllers
                                 {
                                     ResultList.Add(new ResultListItem
                                     {
-                                        IfKey = jCVA003.ReqList[i].IfKey,
-                                        ProcBundleNo = jCVA003.ReqList[i].ProcBundleNo,
+                                        IfKey = jCVA003H.IfKey,
+                                        ProcBundleNo = jCVA003H.ProcBundleNo,
                                         Result = "E",
-                                        Message = $"DI Error: ${MACRO_company.GetLastErrorCode()} - ${MACRO_company.GetLastErrorDescription()}"
+                                        Message = $"DI Error: {MACRO_company.GetLastErrorCode()} - {MACRO_company.GetLastErrorDescription()}"
                                     });
                                     //throw new Exception($"DI Error: ${MACRO_company.GetLastErrorCode()} - ${MACRO_company.GetLastErrorDescription()}");
                                 }
@@ -240,10 +249,10 @@ namespace MACRO_WMS.Controllers
                                 {
                                     ResultList.Add(new ResultListItem
                                     {
-                                        IfKey = jCVA003.ReqList[i].IfKey,
-                                        ProcBundleNo = jCVA003.ReqList[i].ProcBundleNo,
+                                        IfKey = jCVA003H.IfKey,
+                                        ProcBundleNo = jCVA003H.ProcBundleNo,
                                         Result = "E",
-                                        Message = $"DI Error: ${SJ_company.GetLastErrorCode()} - ${SJ_company.GetLastErrorDescription()}"
+                                        Message = $"DI Error: {SJ_company.GetLastErrorCode()} - {SJ_company.GetLastErrorDescription()}"
                                     });
                                     //throw new Exception($"DI Error: ${SJ_company.GetLastErrorCode()} - ${SJ_company.GetLastErrorDescription()}");
                                 }
@@ -252,15 +261,14 @@ namespace MACRO_WMS.Controllers
                             {
                                 ResultList.Add(new ResultListItem
                                 {
-                                    IfKey = jCVA003.ReqList[i].IfKey,
-                                    ProcBundleNo = jCVA003.ReqList[i].ProcBundleNo,
+                                    IfKey = jCVA003H.IfKey,
+                                    ProcBundleNo = jCVA003H.ProcBundleNo,
                                     Result = "S",
                                     Message = "처리 완료"
                                 });
                             }
-                            i++;
                         }
-                        else if (jCVA003H.ErpReqTypCd == "OWTQ" && jCVA003.ReqList[i].EtcOutbizTypeCd == "") //입고유형이 없으면 입고PO
+                        else if (jCVA003H.ErpReqTypCd == "OWTQ" && jCVA003H.EtcOutbizTypeCd == "") //입고유형이 없으면 입고PO
                         {
                             if (jCVA003.BizSeq == 1)
                             {
@@ -273,14 +281,25 @@ namespace MACRO_WMS.Controllers
 
                             //구매오더 기준 입고문서 조회
                             query = " SELECT DocEntry FROM " + sDB.SAPDB(jCVA003.BizSeq.ToString()) + "..OWTR ";
-                            query = query + " Where U_WMSDOCNUM = '" + jCVA003.ReqList[i].WmsReqNo + "'";
-                            query = query + "   AND U_WMSNUM = '" + jCVA003.ReqList[i].ProcBundleNo + "'";
+                            query = query + " Where U_WMSDOCNUM = '" + jCVA003H.WmsReqNo + "'";
+                            query = query + "   AND U_WMSNUM = '" + jCVA003H.ProcBundleNo + "'";
                             _logger.LogWarning(query);
 
                             //쿼리 실행
                             command = new SqlCommand(query, connection);
                             reader = command.ExecuteReader();
-                            reader.Read();
+                            if (!reader.Read())
+                            {
+                                reader.Close();
+                                ResultList.Add(new ResultListItem
+                                {
+                                    IfKey = jCVA003H.IfKey,
+                                    ProcBundleNo = jCVA003H.ProcBundleNo,
+                                    Result = "E",
+                                    Message = "OWTR 없음: U_WMSDOCNUM/U_WMSNUM 확인"
+                                });
+                                continue;
+                            }
 
                             //헤더
                             oOWTR.GetByKey(int.Parse(reader.GetInt32(0).ToString()));
@@ -304,10 +323,10 @@ namespace MACRO_WMS.Controllers
                                 {
                                     ResultList.Add(new ResultListItem
                                     {
-                                        IfKey = jCVA003.ReqList[i].IfKey,
-                                        ProcBundleNo = jCVA003.ReqList[i].ProcBundleNo,
+                                        IfKey = jCVA003H.IfKey,
+                                        ProcBundleNo = jCVA003H.ProcBundleNo,
                                         Result = "E",
-                                        Message = $"DI Error: ${MACRO_company.GetLastErrorCode()} - ${MACRO_company.GetLastErrorDescription()}"
+                                        Message = $"DI Error: {MACRO_company.GetLastErrorCode()} - {MACRO_company.GetLastErrorDescription()}"
                                     });
                                     //throw new Exception($"DI Error: ${MACRO_company.GetLastErrorCode()} - ${MACRO_company.GetLastErrorDescription()}");
                                 }
@@ -315,10 +334,10 @@ namespace MACRO_WMS.Controllers
                                 {
                                     ResultList.Add(new ResultListItem
                                     {
-                                        IfKey = jCVA003.ReqList[i].IfKey,
-                                        ProcBundleNo = jCVA003.ReqList[i].ProcBundleNo,
+                                        IfKey = jCVA003H.IfKey,
+                                        ProcBundleNo = jCVA003H.ProcBundleNo,
                                         Result = "E",
-                                        Message = $"DI Error: ${SJ_company.GetLastErrorCode()} - ${SJ_company.GetLastErrorDescription()}"
+                                        Message = $"DI Error: {SJ_company.GetLastErrorCode()} - {SJ_company.GetLastErrorDescription()}"
                                     });
                                     //throw new Exception($"DI Error: ${SJ_company.GetLastErrorCode()} - ${SJ_company.GetLastErrorDescription()}");
                                 }
@@ -327,13 +346,12 @@ namespace MACRO_WMS.Controllers
                             {
                                 ResultList.Add(new ResultListItem
                                 {
-                                    IfKey = jCVA003.ReqList[i].IfKey,
-                                    ProcBundleNo = jCVA003.ReqList[i].ProcBundleNo,
+                                    IfKey = jCVA003H.IfKey,
+                                    ProcBundleNo = jCVA003H.ProcBundleNo,
                                     Result = "S",
                                     Message = "처리 완료"
                                 });
                             }
-                            i++;
                         }
                         else //기타입고 기타출고 문서의 데이터를 읽어서 기타입고문서 처리
                         {
@@ -350,12 +368,12 @@ namespace MACRO_WMS.Controllers
 
                             //기타입고 문서 생성
                             //헤더
-                            oOIGN.DocDate = DateTime.ParseExact(jCVA003.ReqList[i].ProcYmd, "yyyyMMdd", null);
-                            oOIGN.UserFields.Fields.Item("U_WMSDOCNUM").Value = jCVA003.ReqList[i].WmsReqNo;
+                            oOIGN.DocDate = DateTime.ParseExact(jCVA003H.ProcYmd, "yyyyMMdd", null);
+                            oOIGN.UserFields.Fields.Item("U_WMSDOCNUM").Value = jCVA003H.WmsReqNo;
                             oOIGN.UserFields.Fields.Item("U_WMSNUM").Value = jCVA003H.ProcBundleNo;
                             oOIGN.UserFields.Fields.Item("U_SAPNUM").Value = jCVA003H.ErpReqNo; //250410 수정
 
-                            foreach (var jCVA003L in jCVA003.ReqList[i].ProdList)
+                            foreach (var jCVA003L in jCVA003H.ProdList)
                             {
                                 if ((jCVA003L.ErpLineNo) != chk)
                                 {
@@ -386,13 +404,13 @@ namespace MACRO_WMS.Controllers
                                 oOIGN.Lines.InventoryQuantity = QTYSUM; //수량
                                 oOIGN.Lines.UoMEntry = 1; //수량(EA : UOM)
                                 oOIGN.Lines.AccountCode = reader.GetString(0); //기타입출고계정
-                                oOIGN.Lines.UserFields.Fields.Item("U_LineType").Value = jCVA003.ReqList[i].EtcOutbizTypeCd;
+                                oOIGN.Lines.UserFields.Fields.Item("U_LineType").Value = jCVA003H.EtcOutbizTypeCd;
                                 reader.Close();
 
                                 //원천(입고)에서 창고코드 조회 //250410 수정
                                 query = " SELECT T1.WhsCode FROM " + sDB.SAPDB(jCVA003.BizSeq.ToString()) + "..OIGE T0 ";
                                 query = query + " INNER JOIN " + sDB.SAPDB(jCVA003.BizSeq.ToString()) + "..IGE1 T1 ON T0.DocEntry = T1.DocEntry";
-                                query = query + " WHERE U_WMSNUM = '" + jCVA003H.ProcBundleNo + "' AND U_WMSDOCNUM = '" + jCVA003.ReqList[i].WmsReqNo + "' AND T1.ItemCode = '" + jCVA003L.IfProdId + "' ";
+                                query = query + " WHERE U_WMSNUM = '" + jCVA003H.ProcBundleNo + "' AND U_WMSDOCNUM = '" + jCVA003H.WmsReqNo + "' AND T1.ItemCode = '" + jCVA003L.IfProdId + "' ";
 
                                 //쿼리 실행 //250410 수정
                                 command = new SqlCommand(query, connection);
@@ -431,10 +449,10 @@ namespace MACRO_WMS.Controllers
                                 {
                                     ResultList.Add(new ResultListItem
                                     {
-                                        IfKey = jCVA003.ReqList[i].IfKey,
-                                        ProcBundleNo = jCVA003.ReqList[i].ProcBundleNo,
+                                        IfKey = jCVA003H.IfKey,
+                                        ProcBundleNo = jCVA003H.ProcBundleNo,
                                         Result = "E",
-                                        Message = $"DI Error: ${MACRO_company.GetLastErrorCode()} - ${MACRO_company.GetLastErrorDescription()}"
+                                        Message = $"DI Error: {MACRO_company.GetLastErrorCode()} - {MACRO_company.GetLastErrorDescription()}"
                                     });
                                     //throw new Exception($"DI Error: ${MACRO_company.GetLastErrorCode()} - ${MACRO_company.GetLastErrorDescription()}");
                                 }
@@ -442,10 +460,10 @@ namespace MACRO_WMS.Controllers
                                 {
                                     ResultList.Add(new ResultListItem
                                     {
-                                        IfKey = jCVA003.ReqList[i].IfKey,
-                                        ProcBundleNo = jCVA003.ReqList[i].ProcBundleNo,
+                                        IfKey = jCVA003H.IfKey,
+                                        ProcBundleNo = jCVA003H.ProcBundleNo,
                                         Result = "E",
-                                        Message = $"DI Error: ${SJ_company.GetLastErrorCode()} - ${SJ_company.GetLastErrorDescription()}"
+                                        Message = $"DI Error: {SJ_company.GetLastErrorCode()} - {SJ_company.GetLastErrorDescription()}"
                                     });
                                     //throw new Exception($"DI Error: ${SJ_company.GetLastErrorCode()} - ${SJ_company.GetLastErrorDescription()}");
                                 }
@@ -454,13 +472,12 @@ namespace MACRO_WMS.Controllers
                             {
                                 ResultList.Add(new ResultListItem
                                 {
-                                    IfKey = jCVA003.ReqList[i].IfKey,
-                                    ProcBundleNo = jCVA003.ReqList[i].ProcBundleNo,
+                                    IfKey = jCVA003H.IfKey,
+                                    ProcBundleNo = jCVA003H.ProcBundleNo,
                                     Result = "S",
                                     Message = "처리 완료"
                                 });
                             }
-                            i++;
                         }
                     }
                     catch (Exception e)

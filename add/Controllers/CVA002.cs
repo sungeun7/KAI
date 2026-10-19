@@ -31,7 +31,7 @@ using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
           "ifIdx": "0",
           "ifProdId": "11411-054",
           "exQty": "120",
-          "expYmd": "20240930",          
+          "expYmd": "20240930",
           "lotNo": "11411-054-20240931",
           "erpBatchNo": "11411-054-20240827"
         },
@@ -78,7 +78,7 @@ namespace MACRO_WMS.Controllers
         {
             _logger = logger;
             _configuration = configuration;
-            _sapDIAPI = sapDIAPI; 
+            _sapDIAPI = sapDIAPI;
         }
 
         /// <summary>
@@ -183,7 +183,11 @@ namespace MACRO_WMS.Controllers
                             //쿼리 실행
                             command = new SqlCommand(query, connection);
                             reader = command.ExecuteReader();
-                            reader.Read();
+                            if (!reader.Read())
+                            {
+                                reader.Close();
+                                throw new Exception("ORDR DocEntry '" + jCVA002.ReqList[i].ErpReqNo + "' 에 해당하는 행이 없습니다.");
+                            }
 
                             //헤더
                             oODLN.CardCode = reader.GetString(0); //거래처코드
@@ -219,7 +223,11 @@ namespace MACRO_WMS.Controllers
                                 //쿼리 실행
                                 command = new SqlCommand(query1, connection);
                                 reader = command.ExecuteReader();
-                                reader.Read();
+                                if (!reader.Read())
+                                {
+                                    reader.Close();
+                                    throw new Exception("RDR1 DocEntry '" + jCVA002.ReqList[i].ErpReqNo + "' LineNum '" + jCVA002L.ErpLineNo + "' 에 해당하는 행이 없습니다.");
+                                }
 
                                 oODLN.Lines.UnitPrice = (double)reader.GetDecimal(0); //단가
                                 //oODLN.Lines.LineTotal = (double)reader.GetDecimal(1); //총계
@@ -251,7 +259,7 @@ namespace MACRO_WMS.Controllers
                             //오브젝트 초기화
                             Marshal.ReleaseComObject(oODLN);
                             oODLN = null;
-                            
+
                             //DI 문서 오류 처리
                             if (DIresult != 0)
                             {
@@ -417,7 +425,13 @@ namespace MACRO_WMS.Controllers
                             }
 
                             //재고이전요청 닫기 //241223 수정
-                            oOWTQ.GetByKey(int.Parse(jCVA002.ReqList[i].ErpReqNo));
+                            int owtqDe = int.Parse(jCVA002.ReqList[i].ErpReqNo);
+                            if (!oOWTQ.GetByKey(owtqDe))
+                            {
+                                Marshal.ReleaseComObject(oOWTQ);
+                                oOWTQ = null;
+                                throw new Exception("재고이전요청(OWTQ) DocEntry '" + owtqDe + "' 을(를) 찾을 수 없습니다(GetByKey). 번호·회사(BizSeq)를 확인하세요.");
+                            }
                             oOWTQ.Close();
 
                             //헤더
@@ -427,18 +441,23 @@ namespace MACRO_WMS.Controllers
                             oOIGE.UserFields.Fields.Item("U_WMSDOCNUM").Value = jCVA002.ReqList[i].WmsReqNo;
                             oOIGE.UserFields.Fields.Item("U_WMSNUM").Value = jCVA002H.ProcBundleNo;
                             oOIGE.UserFields.Fields.Item("U_SAPNUM").Value = jCVA002H.ErpReqNo;
-                            
+
                             query = " SELECT Comments FROM " + sDB.SAPDB(jCVA002.BizSeq.ToString()) + "..OWTQ "; //241218 추가
                             query = query + " Where DocEntry = '" + jCVA002.ReqList[i].ErpReqNo + "'";
                             _logger.LogWarning(query);
-                            
+
                             //쿼리 실행
                             command = new SqlCommand(query, connection);
                             reader = command.ExecuteReader();
-                            reader.Read();
+                            if (reader.Read())
+                            {
+                                oOIGE.Comments = reader.IsDBNull(0) ? string.Empty : reader.GetString(0); //241218 추가
+                            }
+                            else
+                            {
+                                oOIGE.Comments = string.Empty;
+                            }
 
-                            oOIGE.Comments = reader.IsDBNull(0) ? string.Empty : reader.GetString(0); //241218 추가
-                                                        
                             reader.Close();
 
                             if (jCVA002.ReqList[i].EtcOutbizTypeCd == "I-201") //소분입고일때만 가격리스트(국내매입단가:부가세별도)
@@ -488,7 +507,7 @@ namespace MACRO_WMS.Controllers
 
                                 chk = (jCVA002L.ErpLineNo);
 
-                                //배치 
+                                //배치
                                 oOIGE.Lines.BatchNumbers.BatchNumber = jCVA002L.ErpBatchNo; //jCVA002L.oITEMCODE + '@' + jCVA002L.oEXPDATE;
                                 oOIGE.Lines.BatchNumbers.Quantity = jCVA002L.ExQty;
                                 oOIGE.Lines.BatchNumbers.Add();
@@ -498,7 +517,7 @@ namespace MACRO_WMS.Controllers
 
                             //마지막행 문서 추가
                             DIresult = oOIGE.Add();
-                                                        
+
                             j = 0;
                             QTYSUM = 0;
                             chk = 0;
